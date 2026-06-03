@@ -58,7 +58,7 @@ export interface ITextStyle {
 }
 
 export interface IContentAttributes extends ITextPosition, ITextStyle {
-
+  strikethrough: boolean
 }
 
 export interface IFieldAttributes extends IContentAttributes {
@@ -66,8 +66,18 @@ export interface IFieldAttributes extends IContentAttributes {
   fieldName: string
 }
 
+export interface IPageBreakAttributes {
+
+}
+
+export interface IHeaderFooterAttributes extends ITextStyle {
+
+}
+
 export interface IImageAttributes extends IContentAttributes {
   imageData: string
+  height: number
+  width: number
 }
 
 export interface IParagraphAttributes {
@@ -129,6 +139,7 @@ export enum NodeEnum {
   Content = 'content',
   Properties = 'properties',
   PageFormat = 'pageFormat',
+  PageBreak = 'page-break',
   Elements = 'elements',
   Table = 'table',
   Row = 'row',
@@ -138,6 +149,7 @@ export enum NodeEnum {
   Field = 'field',
   Space = 'space',
   Tab = 'tab',
+  Header = 'header',
   Footer = 'footer',
   Styles = 'styles',
   Style = 'style',
@@ -166,15 +178,17 @@ export type Tab = Node<NodeEnum.Tab, ITextStyle>
 export type Cell = Node<NodeEnum.Cell, object, Paragraph>
 export type Row = Node<NodeEnum.Row, IRowAttributes, Cell>
 export type Table = Node<NodeEnum.Table, ITableAttributes, Row>
-export type Footer = Node<NodeEnum.Footer, object, Paragraph>
+export type Header = Node<NodeEnum.Header, IHeaderFooterAttributes, Paragraph>
+export type Footer = Node<NodeEnum.Footer, IHeaderFooterAttributes, Paragraph>
 
-export type DocumentElement = Table | Paragraph | Footer
+export type DocumentElement = Table | Paragraph | Header | Footer | PageBreak
 export type Elements = Node<NodeEnum.Elements, object, DocumentElement>
 
 export type PropertiesElement = PageFormat
 export type Properties = Node<NodeEnum.Properties, object, PropertiesElement>
 
 export type PageFormat = Node<NodeEnum.PageFormat, IPageFormatAttributes>
+export type PageBreak = Node<NodeEnum.PageBreak, IPageBreakAttributes, DocumentElement>
 export type Style = Node<NodeEnum.Style, IGlobalStyle>
 export type Styles = Node<NodeEnum.Styles, object, Style>
 
@@ -255,7 +269,7 @@ class ToDocx {
     const { template } = document
     template.$$ ??= []
 
-    const paragraphs: Array<docx.Paragraph | docx.Table> = []
+    const paragraphs: Array<docx.Paragraph> = []
     const sections: docx.ISectionPropertiesOptions[] = []
     const styles: { [name: string]: IGlobalStyle } = {}
     let referenceText: string = ''
@@ -326,24 +340,13 @@ class ToDocx {
 
     // Elements
     const elementsNode = template.$$.find(child => child['#name'] === NodeEnum.Elements)
-
-    if (elementsNode == null) {
-      throw new Error('Elements null')
-    }
+    if (elementsNode == null)
+      throw new Error('Document doesn\'t have elements')
 
     elementsNode.$$ ??= []
 
-    for (const test of elementsNode.$$) {
-      switch (test['#name']) {
-        case NodeEnum.Paragraph:
-          paragraphs.push(this.parseParagraph(test, referenceText, styles))
-          break
-
-        case NodeEnum.Table:
-        case NodeEnum.Footer:
-          break
-      }
-    }
+    for (const test of elementsNode.$$)
+      paragraphs.push(...this.parseDocumentElement(test, referenceText, styles))
 
     // elementsNode.$$.forEach((el, eIdx) => {
     //   const elementStyle = UDFUtils.mergeStyles<docx.IRunStylePropertiesOptions>(
@@ -432,6 +435,33 @@ class ToDocx {
     return doc
   }
 
+  public static parseDocumentElement(
+    element: DocumentElement,
+    referenceText: string,
+    styles: { [name: string]: IGlobalStyle },
+  ): docx.Paragraph[] {
+    const paragraphs: docx.Paragraph[] = []
+
+    switch (element['#name']) {
+      case NodeEnum.Paragraph:
+        paragraphs.push(this.parseParagraph(element, referenceText, styles))
+        break
+
+      case NodeEnum.PageBreak:
+        paragraphs.push(new docx.Paragraph({ children: [new docx.PageBreak(), ...element.$$?.map(elem1 => this.parseDocumentElement(elem1, referenceText, styles)).flat() || []] }))
+        break
+
+      case NodeEnum.Table:
+        break
+
+      case NodeEnum.Footer:
+        paragraphs.push(...element.$$?.map(elem1 => this.parseDocumentElement(elem1, referenceText, styles)).flat() || [])
+        break
+    }
+
+    return paragraphs
+  }
+
   public static parseContent(
     node: Content,
     referenceText: string,
@@ -451,7 +481,7 @@ class ToDocx {
       paragraphStyle,
     )
 
-    return new docx.TextRun({ text: txt, ...runStyle })
+    return new docx.TextRun({ text: txt, ...runStyle, strike: content.$.strikethrough })
   }
 
   public static parseParagraph(
@@ -498,8 +528,22 @@ class ToDocx {
         case NodeEnum.Tab:
         case NodeEnum.Space:
         case NodeEnum.Field:
-        case NodeEnum.Image:
           break
+
+        case NodeEnum.Image:
+          {
+            const imageOptions: docx.IImageOptions = {
+              data: Uint8Array.from(window.atob(test.$.imageData), c => c.charCodeAt(0)),
+              type: 'png', // TODO: type check needs
+              transformation: {
+                height: test.$.size ? test.$.size : test.$.height,
+                width: test.$.size ? test.$.size : test.$.width,
+              },
+            }
+
+            const imageObject = new docx.ImageRun(imageOptions)
+            docxParagraph.addChildElement(imageObject)
+          } break
       }
     }
 
@@ -521,15 +565,8 @@ export class Document {
       explicitArray: true,
       explicitChildren: true,
       attrValueProcessors: [
-        (value: string): string | number | boolean => {
-          if (value === 'true')
-            return true
-          if (value === 'false')
-            return false
-
-          const num = parseFloat(value)
-          return !isNaN(num) && isFinite(num) ? num : value
-        },
+        xml2js.processors.parseNumbers,
+        xml2js.processors.parseBooleans,
       ],
     })
 

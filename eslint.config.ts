@@ -12,6 +12,7 @@ export default antfu({
     'no-console': 'off',
     'ts/no-namespace': 'off',
     'unicorn/prefer-number-properties': 'off',
+    'node/prefer-global/buffer': 'off',
   },
 
   // Or customize the stylistic rules
