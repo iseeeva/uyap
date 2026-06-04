@@ -11,13 +11,13 @@ export enum Version {
 }
 
 export enum OrientationEnum {
-  Portrait = 1,
-  Landscape = 2,
+  portrait = 1,
+  landscape = 2,
 }
 
-export const Orientations: Record<OrientationEnum, 'portrait' | 'landscape' | undefined> = {
-  [OrientationEnum.Portrait]: 'portrait',
-  [OrientationEnum.Landscape]: 'landscape',
+export const Orientations: Record<OrientationEnum, keyof typeof OrientationEnum> = {
+  [OrientationEnum.portrait]: 'portrait',
+  [OrientationEnum.landscape]: 'landscape',
 }
 
 export enum GlobalStyleEnum {
@@ -27,15 +27,15 @@ export enum GlobalStyleEnum {
 
 export enum AlignmentEnum {
   center = 0,
-  right = 1,
   both = 2,
+  right = 1,
   left = 3,
 }
 
-export const Alignments: Record<AlignmentEnum, 'center' | 'right' | 'both' | 'left' | undefined> = {
+export const Alignments: Record<AlignmentEnum, keyof typeof AlignmentEnum> = {
   [AlignmentEnum.center]: 'center',
-  [AlignmentEnum.right]: 'right',
   [AlignmentEnum.both]: 'both',
+  [AlignmentEnum.right]: 'right',
   [AlignmentEnum.left]: 'left',
 }
 
@@ -57,8 +57,14 @@ export interface ITextStyle {
   bold?: boolean
 }
 
+export interface ITabAttributes extends ITextStyle, ITextPosition {
+
+}
+
 export interface IContentAttributes extends ITextPosition, ITextStyle {
   strikethrough: boolean
+  height: number
+  width: number
 }
 
 export interface IFieldAttributes extends IContentAttributes {
@@ -90,6 +96,12 @@ export interface IParagraphAttributes {
   SpaceBelow?: number
   LineSpacing?: number
   TabSet?: string
+  RepeatingLabel?: boolean
+  GroupName?: string
+  NumberType?: string
+  ListLevel?: number
+  ListId?: number
+  SecListTypeLevel1?: string
 }
 
 export interface ITableAttributes {
@@ -100,6 +112,8 @@ export interface ITableAttributes {
 }
 
 export interface IRowAttributes {
+  height: number
+  width: number
   rowType: string
   rowName: string
 }
@@ -132,23 +146,23 @@ export interface IContent {
 // =====================
 
 export enum NodeEnum {
-  Template = 'template',
-  Content = 'content',
-  Properties = 'properties',
-  PageFormat = 'pageFormat',
-  PageBreak = 'page-break',
-  Elements = 'elements',
+  Template = 'template', // bitti
+  Content = 'content', // bitti
+  Properties = 'properties', // bitti
+  PageFormat = 'pageFormat', // bitti
+  PageBreak = 'page-break', // bitti
+  Elements = 'elements', // bitti
   Table = 'table',
   Row = 'row',
   Cell = 'cell',
-  Paragraph = 'paragraph',
-  Image = 'image',
+  Paragraph = 'paragraph', // bitti
+  Image = 'image', // TODO: sadece png calisiyor
   Field = 'field',
   Space = 'space',
   Tab = 'tab',
-  Header = 'header',
-  Footer = 'footer',
-  Styles = 'styles',
+  Header = 'header', // bitti
+  Footer = 'footer', // bitti
+  Styles = 'styles', // bitti
   Style = 'style',
 }
 
@@ -170,11 +184,12 @@ export type Content = Node<NodeEnum.Content, IContentAttributes>
 export type Field = Node<NodeEnum.Field, IFieldAttributes>
 export type Image = Node<NodeEnum.Image, IImageAttributes>
 export type Space = Node<NodeEnum.Space, IContentAttributes>
-export type Tab = Node<NodeEnum.Tab, ITextStyle>
+export type Tab = Node<NodeEnum.Tab, ITabAttributes>
 
 export type Cell = Node<NodeEnum.Cell, object, Paragraph>
 export type Row = Node<NodeEnum.Row, IRowAttributes, Cell>
 export type Table = Node<NodeEnum.Table, ITableAttributes, Row>
+
 export type Header = Node<NodeEnum.Header, IHeaderFooterAttributes, Paragraph>
 export type Footer = Node<NodeEnum.Footer, IHeaderFooterAttributes, Paragraph>
 
@@ -244,6 +259,7 @@ class Utils {
       underline: attrs.underline ? { type: 'dash', color: '#000000' } : undefined,
       color: attrs.foreground ? Utils.convertColor(attrs.foreground) : undefined,
       font: attrs.family,
+      strike: attrs.strikethrough,
     }
   }
 
@@ -263,7 +279,7 @@ class ToDocx {
   private styles: { [name: string]: IGlobalStyle } = {}
 
   private sectionProperties: docx.ISectionOptions['properties'] = undefined
-  private sectionChildren: docx.Paragraph[] = []
+  private sectionChildren: (docx.Paragraph | docx.Table)[] = []
   private sectionHeaders: docx.ISectionOptions['headers'] = undefined
   private sectionFooters: docx.ISectionOptions['footers'] = undefined
 
@@ -333,7 +349,9 @@ class ToDocx {
 
     this.sectionProperties = {
       page: {
-        size: { orientation: Orientations[paperOrientation] },
+        size: {
+          orientation: Orientations[paperOrientation],
+        },
         margin: {
           top: `${topMargin || Document.DEFAULT_MARGIN}pt`,
           right: `${rightMargin || Document.DEFAULT_MARGIN}pt`,
@@ -354,16 +372,16 @@ class ToDocx {
     }
   }
 
-  private parseDocumentElement(element: DocumentElement): docx.Paragraph[] {
-    const paragraphs: docx.Paragraph[] = []
+  private parseDocumentElement(element: DocumentElement): typeof this.sectionChildren {
+    const sectionElements: typeof this.sectionChildren = []
 
     switch (element['#name']) {
       case NodeEnum.Paragraph:
-        paragraphs.push(this.parseParagraph(element))
+        sectionElements.push(this.parseParagraph(element))
         break
 
       case NodeEnum.PageBreak:
-        paragraphs.push(new docx.Paragraph({
+        sectionElements.push(new docx.Paragraph({
           children: [
             new docx.PageBreak(),
             ...element.$$?.flatMap(elem1 => this.parseDocumentElement(elem1)) ?? [],
@@ -372,6 +390,7 @@ class ToDocx {
         break
 
       case NodeEnum.Table:
+        sectionElements.push(this.parseTable(element))
         break
 
       case NodeEnum.Header: {
@@ -385,7 +404,7 @@ class ToDocx {
       } break
     }
 
-    return paragraphs
+    return sectionElements
   }
 
   private parseContent(
@@ -404,7 +423,29 @@ class ToDocx {
       paragraphStyle,
     )
 
-    return new docx.TextRun({ text: txt, ...runStyle, strike: node.$.strikethrough })
+    return new docx.TextRun({ text: txt, ...runStyle })
+  }
+
+  private parseTable(element: Table): docx.Table {
+    const columnWidths = element.$.columnSpans != null
+      ? element.$.columnSpans.toString().split(',').map(Number)
+      : [100, 100, 100, 100]
+
+    const rows = element.$$?.map((row) => {
+      const cells = row.$$?.map((cell) => {
+        const children = cell.$$?.flatMap(para =>
+          this.parseDocumentElement(para),
+        ) ?? []
+        return new docx.TableCell({ children })
+      }) ?? []
+      return new docx.TableRow({ children: cells, height: { value: Utils.ptToTwip(row.$.height), rule: 'auto' } })
+    }) ?? []
+
+    return new docx.Table({
+      width: { size: 100, type: docx.WidthType.PERCENTAGE },
+      columnWidths,
+      rows,
+    })
   }
 
   private parseParagraph(node: Paragraph): docx.Paragraph {
@@ -421,16 +462,21 @@ class ToDocx {
 
     const docxParagraph = new docx.Paragraph({
       alignment: Alignments[node.$?.Alignment ? (node.$!.Alignment - 1) as AlignmentEnum : AlignmentEnum.left],
+      // tabStops: [{ // TODO: Wrong implemantation dc'deki resimlere bak.
+      //   type: 'center',
+      //   position: node.$,
+      // }],
       spacing: {
         line: node.$?.LineSpacing != null
           ? Math.round(Utils.ptToTwip(baseSize * (node.$!.LineSpacing + 1.0)))
           : Math.round(Utils.ptToTwip(baseSize)),
-        lineRule: 'auto',
+        lineRule: 'exactly',
       },
       indent: {
         firstLine: node.$?.FirstLineIndent ? `${node.$.FirstLineIndent}pt` : undefined,
         left: node.$?.LeftIndent ? `${node.$.LeftIndent}pt` : undefined,
         right: node.$?.RightIndent ? `${node.$.RightIndent}pt` : undefined,
+        // hanging: node.$?.Hanging ? `${node.$.Hanging}in` : undefined, // TODO: Wrong implementation
       },
     })
 
@@ -440,8 +486,14 @@ class ToDocx {
           docxParagraph.addChildElement(this.parseContent(child, paragraphStyle))
           break
 
-        case NodeEnum.Tab:
-        case NodeEnum.Space:
+          // case NodeEnum.Space: // TODO: Wrong implemantation
+          //   docxParagraph.addChildElement(new docx.TextRun({ text: String.prototype.padStart(child.$.length, ' '), ...paragraphStyle }))
+          //   break
+
+          // case NodeEnum.Tab: // TODO: Wrong implemantation
+          //   docxParagraph.addChildElement(new docx.TextRun({ text: String.prototype.padStart(child.$.length, '\t'), ...paragraphStyle }))
+          //   break
+
         case NodeEnum.Field:
           break
 
