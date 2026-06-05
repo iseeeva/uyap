@@ -411,41 +411,102 @@ class ToDocx {
     node: Content,
     paragraphStyle: docx.IRunStylePropertiesOptions,
   ): docx.TextRun {
-    const start = Number(node.$?.startOffset)
-    const length = Number(node.$?.length)
+    const startOffset = node.$?.startOffset
+    const textLength = node.$?.length
 
-    if (isNaN(start) || isNaN(length) || length <= 0 || start + length > this.referenceText.length)
+    if (isNaN(startOffset) || isNaN(textLength) || textLength <= 0 || startOffset + textLength > this.referenceText.length)
       throw new Error('Paragraph content skipped due wrong offset/length')
 
-    const txt = this.referenceText.substring(start, start + length)
+    const txt = this.referenceText.substring(startOffset, startOffset + textLength)
     const runStyle = Utils.mergeObjects<docx.IRunStylePropertiesOptions>(
       Utils.textStyle(node.$),
       paragraphStyle,
     )
 
+    console.log(startOffset, txt)
     return new docx.TextRun({ text: txt, ...runStyle })
   }
 
   private parseTable(element: Table): docx.Table {
-    const columnWidths = element.$.columnSpans != null
-      ? element.$.columnSpans.toString().split(',').map(Number)
-      : [100, 100, 100, 100]
+    const colWidthsInTwips = element.$.columnSpans != null
+      ? element.$.columnSpans.toString().split(',').map(num => Utils.ptToTwip(Number(num)))
+      : [2000, 2000, 2000, 2000]
+
+    // Determine total number of grid columns available in this table
+    const totalGridColumns = colWidthsInTwips.length
 
     const rows = element.$$?.map((row) => {
-      const cells = row.$$?.map((cell) => {
+      let currentGridIndex = 0
+      const rawCells = row.$$ ?? []
+      const isSingleCellRow = rawCells.length === 1
+
+      const cells = rawCells.map((cell) => {
         const children = cell.$$?.flatMap(para =>
           this.parseDocumentElement(para),
-        ) ?? []
-        return new docx.TableCell({ children })
+        ).filter((el): el is docx.Paragraph => el instanceof docx.Paragraph) ?? []
+
+        // FIX: If the row has only one cell, force it to take the full column span
+        const cellSpan = isSingleCellRow
+          ? totalGridColumns
+          : (1)
+
+        // Slice your layout configuration based on the calculated span
+        const targetWidths = colWidthsInTwips.slice(currentGridIndex, currentGridIndex + cellSpan)
+        const totalCellWidth = targetWidths.reduce((sum, w) => sum + w, 0)
+        currentGridIndex += cellSpan
+
+        return new docx.TableCell({
+          children,
+          width: {
+            size: totalCellWidth,
+            type: docx.WidthType.DXA,
+          },
+          columnSpan: cellSpan,
+        })
       }) ?? []
-      return new docx.TableRow({ children: cells, height: { value: Utils.ptToTwip(row.$.height), rule: 'auto' } })
+
+      return new docx.TableRow({
+        children: cells,
+        height: {
+          value: Utils.ptToTwip(row.$.height),
+          rule: docx.HeightRule.AUTO,
+        },
+      })
     }) ?? []
 
     return new docx.Table({
       width: { size: 100, type: docx.WidthType.PERCENTAGE },
-      columnWidths,
+      columnWidths: colWidthsInTwips,
       rows,
     })
+  }
+
+  private parseParagraphTabStops(element: Paragraph): docx.TabStopDefinition[] | undefined {
+    const TAB_TYPES: Record<number, string> = {
+      0: docx.TabStopType.LEFT,
+      1: docx.TabStopType.CENTER,
+      2: docx.TabStopType.RIGHT,
+      3: docx.TabStopType.DECIMAL,
+      4: docx.TabStopType.BAR,
+    }
+
+    const TAB_LEADERS: Record<number, string> = {
+      0: docx.LeaderType.NONE,
+      1: docx.LeaderType.DOT,
+      2: docx.LeaderType.HYPHEN,
+      3: docx.LeaderType.UNDERSCORE,
+      4: docx.LeaderType.MIDDLE_DOT,
+    }
+
+    return element.$?.TabSet
+      ?.toString()
+      .split(',')
+      .map(tab => tab.split(':').map(Number))
+      .map(([position, type = 0, leader = 0]) => ({
+        position: Utils.ptToTwip(position), // direkt pt → twip
+        type: TAB_TYPES[type] ?? docx.TabStopType.LEFT,
+        leader: TAB_LEADERS[leader] ?? 'none',
+      } as docx.TabStopDefinition)) ?? []
   }
 
   private parseParagraph(node: Paragraph): docx.Paragraph {
@@ -456,28 +517,44 @@ class ToDocx {
       Utils.namedStyle(this.styles[GlobalStyleEnum.hvl_default]),
     )
 
-    const baseSize: number = typeof paragraphStyle.size === 'string'
+    const baseParagraphSize: number = typeof paragraphStyle.size === 'string'
       ? Utils.docxNumberToNormal(paragraphStyle.size)
       : (paragraphStyle.size || 11)
 
+    const targetAlignment = Alignments[node.$?.Alignment
+      ? (node.$!.Alignment - 1) as AlignmentEnum
+      : AlignmentEnum.left]
+
+    const hanging = node.$?.Hanging ?? 0
+    const leftIndent = node.$?.LeftIndent ?? 0
+    const rightIndent = node.$?.RightIndent ?? 0
+    const firstLineIndent = node.$?.FirstLineIndent ?? 0
+    const spaceAbove = node.$?.SpaceAbove ?? 0
+    const spaceBelow = node.$?.SpaceBelow ?? 0
+
     const docxParagraph = new docx.Paragraph({
-      alignment: Alignments[node.$?.Alignment ? (node.$!.Alignment - 1) as AlignmentEnum : AlignmentEnum.left],
-      // tabStops: [{ // TODO: Wrong implemantation dc'deki resimlere bak.
-      //   type: 'center',
-      //   position: node.$,
-      // }],
+      alignment: targetAlignment,
       spacing: {
         line: node.$?.LineSpacing != null
-          ? Math.round(Utils.ptToTwip(baseSize * (node.$!.LineSpacing + 1.0)))
-          : Math.round(Utils.ptToTwip(baseSize)),
-        lineRule: 'exactly',
+          ? Math.round(Utils.ptToTwip(baseParagraphSize * (node.$!.LineSpacing + 1.0)))
+          : Math.round(Utils.ptToTwip(baseParagraphSize)),
+        lineRule: 'auto',
+        before: spaceAbove > 0 ? Utils.ptToTwip(spaceAbove) : undefined,
+        after: spaceBelow > 0 ? Utils.ptToTwip(spaceBelow) : undefined,
       },
       indent: {
-        firstLine: node.$?.FirstLineIndent ? `${node.$.FirstLineIndent}pt` : undefined,
-        left: node.$?.LeftIndent ? `${node.$.LeftIndent}pt` : undefined,
-        right: node.$?.RightIndent ? `${node.$.RightIndent}pt` : undefined,
-        // hanging: node.$?.Hanging ? `${node.$.Hanging}in` : undefined, // TODO: Wrong implementation
+        hanging: hanging > 0 ? Utils.ptToTwip(hanging) : undefined,
+        left: hanging > 0
+          ? Utils.ptToTwip(leftIndent + hanging)
+          : leftIndent > 0
+            ? Utils.ptToTwip(leftIndent)
+            : undefined,
+        firstLine: !hanging && firstLineIndent !== 0
+          ? Utils.ptToTwip(firstLineIndent)
+          : undefined,
+        right: rightIndent > 0 ? Utils.ptToTwip(rightIndent) : undefined,
       },
+      tabStops: this.parseParagraphTabStops(node),
     })
 
     for (const child of node.$$) {
