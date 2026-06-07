@@ -3,7 +3,7 @@ import antfu from '@antfu/eslint-config'
 
 export default antfu({
   // Type of the project. 'lib' for libraries, the default is 'app'
-  type: 'lib',
+  type: 'app',
 
   // Enable stylistic formatting rules
   // stylistic: true,
@@ -12,6 +12,8 @@ export default antfu({
     'no-console': 'off',
     'ts/no-namespace': 'off',
     'unicorn/prefer-number-properties': 'off',
+    'node/prefer-global/buffer': 'off',
+    'vue/custom-event-name-casing': 'off',
   },
 
   // Or customize the stylistic rules
