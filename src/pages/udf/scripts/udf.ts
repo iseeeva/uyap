@@ -1,21 +1,9 @@
 import * as docx from 'docx'
 import xml2js from 'xml2js'
 
-// #region Enums
-
-export enum Version {
-  v1_7 = '1.7',
-  v1_8 = '1.8',
-}
-
 export enum OrientationEnum {
   portrait = 1,
   landscape = 2,
-}
-
-export enum GlobalStyleEnum {
-  default = 'default',
-  hvl_default = 'hvl-default',
 }
 
 export enum AlignmentEnum {
@@ -24,22 +12,6 @@ export enum AlignmentEnum {
   right = 1,
   left = 3,
 }
-
-export const Orientations: Record<OrientationEnum, keyof typeof OrientationEnum> = {
-  [OrientationEnum.portrait]: 'portrait',
-  [OrientationEnum.landscape]: 'landscape',
-}
-
-export const Alignments: Record<AlignmentEnum, keyof typeof AlignmentEnum> = {
-  [AlignmentEnum.center]: 'center',
-  [AlignmentEnum.both]: 'both',
-  [AlignmentEnum.right]: 'right',
-  [AlignmentEnum.left]: 'left',
-}
-
-// #endregion
-
-// #region Interface
 
 export interface ITextPosition {
   startOffset: number
@@ -73,8 +45,6 @@ export interface IImageAttributes extends IContentAttributes {
 
 export interface ITabAttributes extends ITextStyle, ITextPosition {}
 
-export interface IPageBreakAttributes {}
-
 export interface IHeaderFooterAttributes extends ITextStyle {}
 
 export interface IParagraphAttributes {
@@ -90,12 +60,8 @@ export interface IParagraphAttributes {
   SpaceBelow?: number
   LineSpacing?: number
   TabSet?: string
-  RepeatingLabel?: boolean
-  GroupName?: string
-  NumberType?: string
   ListLevel?: number
   ListId?: number
-  SecListTypeLevel1?: string
 }
 
 export interface ITableAttributes {
@@ -122,18 +88,9 @@ export interface IPageFormatAttributes {
 }
 
 export interface IGlobalStyle extends ITextStyle {
-  name: GlobalStyleEnum
+  name: string
   description: string
 }
-
-export interface IContent {
-  '#name': NodeEnum.Content
-  '_': string
-}
-
-// #endregion
-
-// #region Node Type
 
 export enum NodeEnum {
   Template = 'template',
@@ -158,7 +115,7 @@ export enum NodeEnum {
 
 export interface Node<TName extends NodeEnum, TAttributes, TChildren = never> {
   '#name': TName
-  '$': TAttributes
+  '$'?: TAttributes
   '$$'?: TChildren[]
 }
 
@@ -176,24 +133,28 @@ export type Table = Node<NodeEnum.Table, ITableAttributes, Row>
 export type Header = Node<NodeEnum.Header, IHeaderFooterAttributes, Paragraph>
 export type Footer = Node<NodeEnum.Footer, IHeaderFooterAttributes, Paragraph>
 export type PageFormat = Node<NodeEnum.PageFormat, IPageFormatAttributes>
-export type PageBreak = Node<NodeEnum.PageBreak, IPageBreakAttributes, DocumentElement>
+export type PageBreak = Node<NodeEnum.PageBreak, object, ParagraphElement>
 export type Style = Node<NodeEnum.Style, IGlobalStyle>
 export type Styles = Node<NodeEnum.Styles, object, Style>
 export type Properties = Node<NodeEnum.Properties, object, PageFormat>
 export type Elements = Node<NodeEnum.Elements, object, DocumentElement>
 
-export type DocumentElement = Table | Paragraph | Header | Footer | PageBreak
+export type DocumentElement = Table | Paragraph | PageBreak
+export type TopLevelElement = DocumentElement | Header | Footer
 
-export type TemplateElement = IContent | Properties | Elements | Styles
+export interface IContentNode {
+  '#name': NodeEnum.Content
+  '_': string
+}
+
+export type TemplateElement = Properties | Elements | Styles | IContentNode
 export type Template = Node<NodeEnum.Template, { format_id: string }, TemplateElement>
 
 export interface IUdfDocument {
   template: Template
 }
 
-// #endregion
-
-// #region ColorUtil
+// #region Utils
 
 function convertColor(value?: number): string {
   if (value == null || isNaN(value))
@@ -205,13 +166,9 @@ function convertColor(value?: number): string {
   return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`
 }
 
-// #endregion
-
-// #region UnitUtil
-
-function ptToTwip(pt?: number | string): number {
+function ptToTwip(pt: number | string | undefined): number {
   const parsed = typeof pt === 'string' ? parseFloat(pt) : pt
-  return !isNaN(parsed as number) ? (parsed as number) * 20 : 0
+  return parsed != null && !isNaN(parsed) ? parsed * 20 : 0
 }
 
 function docxSizeToNumber(value: string): number {
@@ -219,19 +176,25 @@ function docxSizeToNumber(value: string): number {
   return !isNaN(output) ? output : 0
 }
 
+function mergeStyles<T extends object>(...styles: Partial<T>[]): T {
+  const result = {} as T
+  for (const style of styles) {
+    for (const _key in style) {
+      const key = _key as keyof T
+      if (result[key] == null && style[key] != null)
+        result[key] = style[key] as T[keyof T]
+    }
+  }
+  return result
+}
+
+function isContentNode(child: TemplateElement): child is IContentNode {
+  return child['#name'] === NodeEnum.Content
+}
+
 // #endregion
 
-// #region StyleUtil
-
-function mergeStyles<T>(...styles: Partial<T>[]): T {
-  return styles.reduce<Partial<T>>((acc, style) => {
-    for (const key in style) {
-      if (acc[key as keyof T] == null && style[key as keyof T] != null)
-        acc[key as keyof T] = style[key as keyof T]
-    }
-    return acc
-  }, {}) as T
-}
+// #region Style
 
 function runStyleFromContent(attrs: IContentAttributes): docx.IRunStylePropertiesOptions {
   return {
@@ -254,10 +217,6 @@ function runStyleFromTextStyle(style?: ITextStyle): docx.IRunStylePropertiesOpti
   }
 }
 
-// #endregion
-
-// #region StyleResolver
-
 class StyleResolver {
   private readonly registry: Record<string, IGlobalStyle>
 
@@ -268,23 +227,24 @@ class StyleResolver {
   public static fromStylesNode(node: Styles): StyleResolver {
     const registry: Record<string, IGlobalStyle> = {}
     for (const style of node.$$ ?? []) {
-      if (style?.$.name)
-        registry[style.$.name] = style.$
+      const attrs = style?.$
+      if (attrs?.name)
+        registry[attrs.name] = attrs
     }
     return new StyleResolver(registry)
   }
 
-  public resolveForParagraph(resolver: string): docx.IRunStylePropertiesOptions {
+  public resolveForParagraph(resolver?: string): docx.IRunStylePropertiesOptions {
     return mergeStyles<docx.IRunStylePropertiesOptions>(
-      runStyleFromTextStyle(this.registry[resolver]),
-      runStyleFromTextStyle(this.registry[GlobalStyleEnum.hvl_default]),
+      resolver ? runStyleFromTextStyle(this.registry[resolver]) : {},
+      runStyleFromTextStyle(this.registry['hvl-default']),
     )
   }
 }
 
 // #endregion
 
-// #region TabStopParser
+// #region TabStop
 
 const TabTypes: Record<number, string> = {
   0: docx.TabStopType.LEFT,
@@ -309,11 +269,30 @@ function parseTabStops(tabSet?: string): docx.TabStopDefinition[] {
     .toString()
     .split(',')
     .map(tab => tab.split(':').map(Number))
-    .map(([position, type = 0, leader = 0]) => ({
+    .map(([position, type = 0, leader = 0]): docx.TabStopDefinition => ({
       position: ptToTwip(position),
-      type: TabTypes[type] ?? docx.TabStopType.LEFT,
-      leader: TabLeaders[leader] ?? 'none',
-    } as docx.TabStopDefinition))
+      type: (TabTypes[type] ?? docx.TabStopType.LEFT) as any,
+      leader: (TabLeaders[leader] ?? docx.LeaderType.NONE) as any,
+    }))
+}
+
+// #endregion
+
+// #region Alignment
+
+const AlignmentMap: Record<AlignmentEnum, string> = {
+  [AlignmentEnum.center]: docx.AlignmentType.CENTER,
+  [AlignmentEnum.both]: docx.AlignmentType.BOTH,
+  [AlignmentEnum.right]: docx.AlignmentType.RIGHT,
+  [AlignmentEnum.left]: docx.AlignmentType.LEFT,
+}
+
+function resolveAlignment(raw?: AlignmentEnum): string {
+  if (raw == null)
+    return docx.AlignmentType.LEFT
+
+  const key = (raw - 1) as AlignmentEnum
+  return AlignmentMap[key] ?? docx.AlignmentType.LEFT
 }
 
 // #endregion
@@ -326,60 +305,58 @@ class ElementParser {
     private readonly styleResolver: StyleResolver,
   ) {}
 
-  public parseDocumentElement(element: DocumentElement): (docx.Paragraph | docx.Table)[] {
-    const handlers: Partial<Record<NodeEnum, () => (docx.Paragraph | docx.Table)[]>> = {
-      [NodeEnum.Paragraph]: () => [this.parseParagraph(element as Paragraph)],
-      [NodeEnum.Table]: () => [this.parseTable(element as Table)],
-      [NodeEnum.PageBreak]: () => [this.parsePageBreak(element as PageBreak)],
+  public parseDocumentElement(element: DocumentElement): docx.Paragraph | docx.Table {
+    switch (element['#name']) {
+      case NodeEnum.Paragraph:
+        return this.parseParagraph(element)
+
+      case NodeEnum.Table:
+        return this.parseTable(element)
+
+      case NodeEnum.PageBreak:
+        return this.parsePageBreak(element)
     }
-    return handlers[element['#name']]?.() ?? []
   }
 
-  public parseParagraphsFrom(elements: DocumentElement[]): docx.Paragraph[] {
-    return elements
-      .flatMap(el => this.parseDocumentElement(el))
-      .filter((el): el is docx.Paragraph => el instanceof docx.Paragraph)
+  public parseParagraphsFrom(elements: Paragraph[]): docx.Paragraph[] {
+    return elements.map(el => this.parseParagraph(el))
   }
 
   private parsePageBreak(element: PageBreak): docx.Paragraph {
-    return new docx.Paragraph({
-      children: [
-        new docx.PageBreak(),
-        ...element.$$?.flatMap(el => this.parseDocumentElement(el)) ?? [],
-      ],
-    })
+    const children: docx.ParagraphChild[] = [new docx.PageBreak()]
+    for (const child of element.$$ ?? []) {
+      const run = this.parseParagraphChild(child as ParagraphElement, {})
+      if (run)
+        children.push(run)
+    }
+    return new docx.Paragraph({ children })
   }
 
   private parseParagraph(node: Paragraph): docx.Paragraph {
     node.$$ ??= []
 
-    const paragraphStyle = this.styleResolver.resolveForParagraph(node.$?.resolver)
+    const attrs = node.$
+    const paragraphStyle = this.styleResolver.resolveForParagraph(attrs?.resolver)
 
     const baseSize: number = typeof paragraphStyle.size === 'string'
       ? docxSizeToNumber(paragraphStyle.size)
-      : (paragraphStyle.size || 11)
+      : (paragraphStyle.size ?? 11)
 
-    const alignment = Alignments[
-      node.$?.Alignment
-        ? (node.$!.Alignment - 1) as AlignmentEnum
-        : AlignmentEnum.left
-    ]
-
-    const hanging = node.$?.Hanging ?? 0
-    const leftIndent = node.$?.LeftIndent ?? 0
-    const rightIndent = node.$?.RightIndent ?? 0
-    const firstLine = node.$?.FirstLineIndent ?? 0
-    const spaceAbove = node.$?.SpaceAbove ?? 0
-    const spaceBelow = node.$?.SpaceBelow ?? 0
-    const lineSpacing = node.$?.LineSpacing
+    const hanging = attrs?.Hanging ?? 0
+    const leftIndent = attrs?.LeftIndent ?? 0
+    const rightIndent = attrs?.RightIndent ?? 0
+    const firstLine = attrs?.FirstLineIndent ?? 0
+    const spaceAbove = attrs?.SpaceAbove ?? 0
+    const spaceBelow = attrs?.SpaceBelow ?? 0
+    const lineSpacing = attrs?.LineSpacing
 
     const paragraph = new docx.Paragraph({
-      alignment,
+      alignment: resolveAlignment(attrs?.Alignment) as any,
       spacing: {
         line: lineSpacing != null
           ? Math.round(ptToTwip(baseSize * (lineSpacing + 1.0)))
           : Math.round(ptToTwip(baseSize)),
-        lineRule: 'auto',
+        lineRule: docx.LineRuleType.AUTO,
         before: spaceAbove > 0 ? ptToTwip(spaceAbove) : undefined,
         after: spaceBelow > 0 ? ptToTwip(spaceBelow) : undefined,
       },
@@ -391,7 +368,7 @@ class ElementParser {
         firstLine: !hanging && firstLine !== 0 ? ptToTwip(firstLine) : undefined,
         right: rightIndent > 0 ? ptToTwip(rightIndent) : undefined,
       },
-      tabStops: parseTabStops(node.$?.TabSet),
+      tabStops: parseTabStops(attrs?.TabSet),
     })
 
     for (const child of node.$$) {
@@ -406,45 +383,52 @@ class ElementParser {
   private parseParagraphChild(
     child: ParagraphElement,
     paragraphStyle: docx.IRunStylePropertiesOptions,
-  ): docx.TextRun | docx.ImageRun | null {
+  ): docx.TextRun | docx.ImageRun | undefined {
     switch (child['#name']) {
       case NodeEnum.Content:
         return this.parseContent(child, paragraphStyle)
 
-      case NodeEnum.Image:
+      case NodeEnum.Field: // TODO: implement that types
+      case NodeEnum.Space: // TODO: implement that types
+      case NodeEnum.Tab: // TODO: implement that types
+        break
+
+      case NodeEnum.Image: {
+        const attrs = child.$
+        if (!attrs)
+          return undefined
+
         return new docx.ImageRun({
-          data: Uint8Array.from(window.atob(child.$.imageData), c => c.charCodeAt(0)),
+          data: Uint8Array.from(window.atob(attrs.imageData), c => c.charCodeAt(0)),
           type: 'png',
           transformation: {
-            height: child.$.size ?? child.$.height,
-            width: child.$.size ?? child.$.width,
+            height: attrs.size ?? attrs.height,
+            width: attrs.size ?? attrs.width,
           },
         })
+      }
 
-      case NodeEnum.Field:
       default:
-        return null
+        return undefined
     }
   }
 
   private parseContent(
     node: Content,
     paragraphStyle: docx.IRunStylePropertiesOptions,
-  ): docx.TextRun {
-    const { startOffset, length } = node.$
+  ): docx.TextRun | undefined {
+    const attrs = node.$
+    if (!attrs)
+      return undefined
 
-    if (
-      isNaN(startOffset)
-      || isNaN(length)
-      || length <= 0
-      || startOffset + length > this.referenceText.length
-    ) {
+    const { startOffset, length } = attrs
+
+    if (isNaN(startOffset) || isNaN(length) || length <= 0 || startOffset + length > this.referenceText.length)
       throw new Error('Paragraph content skipped due to wrong offset/length')
-    }
 
     const text = this.referenceText.substring(startOffset, startOffset + length)
     const runStyle = mergeStyles<docx.IRunStylePropertiesOptions>(
-      runStyleFromContent(node.$),
+      runStyleFromContent(attrs),
       paragraphStyle,
     )
 
@@ -452,16 +436,14 @@ class ElementParser {
   }
 
   private parseTable(element: Table): docx.Table {
-    const colWidths = element.$.columnSpans != null
+    const colWidths = element.$?.columnSpans != null
       ? element.$.columnSpans.toString().split(',').map(n => ptToTwip(Number(n)))
       : [2000, 2000, 2000, 2000]
-
-    const rows = (element.$$ ?? []).map(row => this.parseRow(row, colWidths))
 
     return new docx.Table({
       width: { size: 100, type: docx.WidthType.PERCENTAGE },
       columnWidths: colWidths,
-      rows,
+      rows: (element.$$ ?? []).map(row => this.parseRow(row, colWidths)),
     })
   }
 
@@ -471,7 +453,7 @@ class ElementParser {
     let gridIndex = 0
 
     const cells = rawCells.map((cell) => {
-      const children = this.parseParagraphsFrom(cell.$$ as unknown as DocumentElement[])
+      const children = this.parseParagraphsFrom(cell.$$ ?? [])
       const span = isSingleCell ? colWidths.length : 1
       const width = colWidths.slice(gridIndex, gridIndex + span).reduce((a, b) => a + b, 0)
       gridIndex += span
@@ -485,7 +467,7 @@ class ElementParser {
 
     return new docx.TableRow({
       children: cells,
-      height: { value: ptToTwip(row.$.height), rule: docx.HeightRule.AUTO },
+      height: { value: ptToTwip(row.$?.height), rule: docx.HeightRule.AUTO }, // TODO: if height doesn't exist.
     })
   }
 }
@@ -501,10 +483,17 @@ class SectionBuilder {
   public readonly children: (docx.Paragraph | docx.Table)[] = []
 
   public setPageFormat(prop: PageFormat): void {
+    if (prop.$ == null)
+      return
+
     const { paperOrientation, topMargin, rightMargin, bottomMargin, leftMargin } = prop.$
     this.properties = {
       page: {
-        size: { orientation: Orientations[paperOrientation] },
+        size: {
+          orientation: paperOrientation === OrientationEnum.landscape
+            ? docx.PageOrientation.LANDSCAPE
+            : docx.PageOrientation.PORTRAIT,
+        },
         margin: {
           top: `${topMargin || Document.DEFAULT_MARGIN}pt`,
           right: `${rightMargin || Document.DEFAULT_MARGIN}pt`,
@@ -549,34 +538,28 @@ class DocumentConverter {
       throw new Error('Document doesn\'t have elements')
 
     for (const el of elementsNode.$$ ?? []) {
-      this.dispatchDocumentElement(el, section, parser)
+      this.dispatchTopLevelElement(el, section, parser)
     }
 
     return new docx.Document({ sections: [section.toSection()] })
   }
 
   private extractReferenceText(template: Template): string {
-    const contentNode = template.$$?.find(
-      (child): child is IContent => child['#name'] === NodeEnum.Content,
-    )
-
-    return (contentNode as IContent)?._ ?? ''
+    const contentNode = template.$$?.find(isContentNode)
+    return contentNode?._ ?? ''
   }
 
   private extractStyleResolver(template: Template): StyleResolver {
     const stylesNode = template.$$?.find(
       (child): child is Styles => child['#name'] === NodeEnum.Styles,
     )
-    return stylesNode
-      ? StyleResolver.fromStylesNode(stylesNode)
-      : new StyleResolver({})
+    return stylesNode ? StyleResolver.fromStylesNode(stylesNode) : new StyleResolver({})
   }
 
   private applyProperties(template: Template, section: SectionBuilder): void {
     const propertiesNode = template.$$?.find(
       (child): child is Properties => child['#name'] === NodeEnum.Properties,
     )
-
     if (!propertiesNode)
       return
 
@@ -586,31 +569,27 @@ class DocumentConverter {
     }
   }
 
-  private dispatchDocumentElement(
-    element: DocumentElement,
+  private dispatchTopLevelElement(
+    element: TopLevelElement,
     section: SectionBuilder,
     parser: ElementParser,
   ): void {
     switch (element['#name']) {
-      case NodeEnum.Header: {
-        const children = parser.parseParagraphsFrom((element as Header).$$ as unknown as DocumentElement[])
-        section.headers = { default: new docx.Header({ children }) }
+      case NodeEnum.Header:
+        section.headers = { default: new docx.Header({ children: parser.parseParagraphsFrom(element.$$ ?? []) }) }
         break
-      }
-      case NodeEnum.Footer: {
-        const children = parser.parseParagraphsFrom((element as Footer).$$ as unknown as DocumentElement[])
-        section.footers = { default: new docx.Footer({ children }) }
+
+      case NodeEnum.Footer:
+        section.footers = { default: new docx.Footer({ children: parser.parseParagraphsFrom(element.$$ ?? []) }) }
         break
-      }
+
       default:
-        section.children.push(...parser.parseDocumentElement(element))
+        section.children.push(parser.parseDocumentElement(element))
     }
   }
 }
 
 // #endregion
-
-// #region Document
 
 export class Document {
   public readonly document: IUdfDocument
@@ -635,29 +614,16 @@ export class Document {
     parser.parseString(xmlString, (err, result: IUdfDocument) => {
       if (err)
         throw new Error(`Failed to parse UDF XML: ${err.message}`)
-
       parsed = result
     })
 
     if (!parsed)
       throw new Error('XML parsing resulted in undefined document.')
 
-    this.validateVersion(parsed)
     return parsed
-  }
-
-  public static validateVersion(document: IUdfDocument): void {
-    const version = document.template?.$?.format_id?.toString()
-    if (!version)
-      throw new Error('Missing UDF format version.')
-
-    if (!Object.values(Version).includes(version as Version))
-      throw new Error(`Unsupported UDF Version: ${version}`)
   }
 
   public toDocx(): docx.Document {
     return new DocumentConverter().convert(this.document)
   }
 }
-
-// #endregion

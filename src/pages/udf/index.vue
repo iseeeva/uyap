@@ -69,7 +69,7 @@ async function processFile(event: Event, type: ToolEnum.toDocx | ToolEnum.versio
     }
 
     const udfParser = new udf.Document(xmlData)
-    appendLog(`Dokuman versiyonu: ${udfParser.document.template.$.format_id}\n`)
+    appendLog(`Dokuman versiyonu: ${udfParser.document.template.$?.format_id ?? 'bilinmiyor'}\n`)
 
     if (type === ToolEnum.toDocx) {
       const docxDocument = udfParser.toDocx()
@@ -151,7 +151,7 @@ function downloadBlob(blob: Blob, filename: string) {
         Versiyon Kontrolü
       </h2>
       <p class="card-desc">
-        UDF formatının versiyonu'nu kontrol etmeye yarar.
+        UDF formatının versiyonunu kontrol etmeye yarar.
       </p>
 
       <div class="input-group">
