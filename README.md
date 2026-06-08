@@ -13,8 +13,5 @@ Bu proje, <strong>UYAP Editör</strong> ile oluşturulan formatlar üzerinde kol
 $ npm install
 
 # Projeyi Kur
-$ npm run ts:build
-
-# Başlat
-$ npm run start
+$ npm run build
 ```
