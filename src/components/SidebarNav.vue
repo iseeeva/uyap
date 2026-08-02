@@ -73,9 +73,10 @@ const route = useRoute()
 </template>
 
 <style scoped>
+/* ---------- Desktop ---------- */
 #sidebar {
   width: var(--sidebar-width);
-  min-height: 100vh;
+  height: 100dvh;
   background: var(--bg-sidebar);
   border-left: 1px solid var(--bg-sidebar-border);
   display: flex;
@@ -85,6 +86,8 @@ const route = useRoute()
   position: relative;
   z-index: 10;
   flex-shrink: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .nav-item {
@@ -109,10 +112,15 @@ const route = useRoute()
   transition: background 0.15s, color 0.15s;
   user-select: none;
   text-transform: uppercase;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .nav-label:hover {
   background: rgba(255, 255, 255, 0.07);
+}
+
+.nav-label:active {
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .nav-label.active-page {
@@ -165,6 +173,18 @@ const route = useRoute()
   }
 }
 
+@keyframes dropInUp {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
 .dropdown-header {
   font-family: var(--font-nav);
   font-size: 15px;
@@ -188,10 +208,15 @@ const route = useRoute()
   cursor: pointer;
   transition: background 0.12s;
   text-transform: uppercase;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .dropdown-item:hover {
   background: rgba(255, 255, 255, 0.18);
+}
+
+.dropdown-item:active {
+  background: rgba(255, 255, 255, 0.25);
 }
 
 .dropdown-item:last-child {
@@ -207,5 +232,73 @@ const route = useRoute()
   height: 1px;
   background: var(--bg-sidebar-border);
   margin: 6px 16px;
+}
+
+/* ---------- Phone ---------- */
+@media (max-width: 640px) {
+  #sidebar {
+    width: 100%;
+    height: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom));
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-around;
+    padding: 0;
+    gap: 0;
+    border-left: none;
+    border-top: 1px solid var(--bg-sidebar-border);
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding-bottom: env(safe-area-inset-bottom);
+    overflow: visible;
+  }
+
+  .nav-item {
+    width: auto;
+    flex: 1;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .nav-label {
+    flex-direction: column;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    border-radius: 0;
+    padding: 6px 4px;
+    font-size: 12px;
+    gap: 2px;
+    min-height: 44px;
+  }
+
+  .chevron {
+    margin-left: 0;
+    font-size: 8px;
+  }
+
+  .dropdown-panel {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom) + 8px);
+    margin: 0;
+    width: auto;
+    max-height: 60vh;
+    overflow-y: auto;
+    animation: dropInUp 0.2s cubic-bezier(0.35, 1.55, 0.65, 1);
+  }
+
+  .dropdown-item {
+    padding: 14px 16px;
+  }
+
+  .nav-separator {
+    display: none;
+  }
 }
 </style>

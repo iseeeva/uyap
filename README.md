@@ -1,5 +1,5 @@
-### Uyap için Araçlar (Hala geliştiriliyor)
-Bu proje, <strong>UYAP Editör</strong> ile oluşturulan formatlar üzerinde kolayca işlem yapabilmeniz için geliştirilmiş <strong>açık kaynaklı bir toolbox'dır</strong>. <br>
+### Uyap Araçları (Hala geliştiriliyor)
+Bu proje, <strong>UYAP Editör</strong> ile oluşturulan formatlar üzerinde kolayca işlem yapabilmeniz için geliştirilmiş <strong>açık kaynaklı bir araçtır</strong>. <br>
 
 > [!WARNING]
 > <strong>Bilgilendirme:</strong> Bu projenin UYAP (Ulusal Yargı Ağı Bilişim Sistemi), Adalet Bakanlığı veya resmi kurum ve iştirakleriyle hiçbir <strong>bağı, ortaklığı veya resmi sorumluluğu bulunmamaktadır</strong>.
