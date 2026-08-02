@@ -29,6 +29,7 @@ a {
   color: var(--accent);
   background-color: transparent;
   text-decoration: none;
+  word-break: break-word;
 }
 
 a:hover,
@@ -36,18 +37,22 @@ a:active {
   text-decoration: underline;
 }
 
+.page-body {
+  max-width: min(720px, 90vw);
+}
+
 .page-body p {
   line-height: 1.6;
   margin-bottom: 1.5rem;
+  font-size: clamp(14px, 1.5vw + 10px, 17px);
 }
 
 .disclaimer {
-  background-color: #fff9e6;
-  border-left: 4px solid #ffcc00;
+  background-color: rgba(202, 62, 71, 0.12);
+  border-left: 4px solid var(--accent);
   border-radius: 4px;
-  padding: 12px 16px;
-  color: #5c4b00;
+  padding: clamp(10px, 1.5vw, 16px) clamp(12px, 2vw, 18px);
+  color: var(--text-primary);
   line-height: 1.5;
-  font-size: 0.95rem;
 }
 </style>

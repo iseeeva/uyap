@@ -12,20 +12,20 @@
   --bg-main: #414141;
   --bg-sidebar: #313131;
   --bg-sidebar-border: #656565;
-  
+
   --text-primary: #eeeeee;
   --text-muted: #bfbfbf;
-
 
   --accent: #CA3E47;
 
   --divider-color: #656565;
-  
+
   --card-bg: var(--bg-sidebar);
   --card-border: var(--bg-sidebar-border);
   --card-hover-bg: var(--bg-main);
 
   --sidebar-width: 250px;
+  --bottom-nav-height: 64px;
   --font-nav: 'Rajdhani', sans-serif;
   --font-body: 'Exo 2', sans-serif;
 }
@@ -34,27 +34,22 @@ html,
 body,
 #app {
   height: 100%;
-  min-height: 100vh;
+  overflow: hidden;
+}
+
+html {
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
   font-family: var(--font-body);
   background: var(--bg-main);
   color: var(--text-primary);
-  
+
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
 
-#app-wrapper {
-  display: flex;
-  min-height: 100vh;
-}
-
-#main-content {
-  flex: 1;
-  padding: 25px 40px;
-  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .fade-enter-active,
@@ -72,15 +67,9 @@ body {
   transform: translateX(10px);
 }
 
-.overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 9;
-}
-
 .page-title {
   font-family: var(--font-nav);
-  font-size: 36px;
+  font-size: clamp(22px, 4vw + 8px, 36px);
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -93,7 +82,7 @@ body {
 }
 
 .page-subtitle {
-  font-size: 11px;
+  font-size: clamp(10px, 0.6vw + 8px, 11px);
   font-weight: 300;
   color: var(--text-muted);
   letter-spacing: 0.1em;
@@ -102,7 +91,7 @@ body {
 }
 
 .breadcrumb {
-  font-size: 11px;
+  font-size: clamp(10px, 0.6vw + 8px, 11px);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -116,23 +105,26 @@ body {
 .divider {
   height: 1px;
   background: var(--divider-color);
-  margin: 25px 0;
+  margin: clamp(16px, 3vw, 25px) 0;
 }
 
+/* ---------- Cards ---------- */
 .card-grid {
   display: grid;
-  /* grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); */
-  gap: 15px;
-  /* max-width: 700px; */
+  gap: clamp(12px, 1.5vw, 20px);
 }
 
 .card {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
-  border-radius: 10px;
-  padding: 20px;
+  border-radius: 12px;
+  padding: clamp(18px, 2.5vw, 28px) clamp(16px, 2vw, 26px);
+  min-height: 150px;
+  display: flex;
+  flex-direction: column;
   transition: background 0.15s, border-color 0.15s;
   cursor: default;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .card:hover {
@@ -140,15 +132,23 @@ body {
   border-color: var(--accent);
 }
 
+.card:active {
+  background: var(--card-hover-bg);
+  border-color: var(--accent);
+}
+
 .card-title {
   font-family: var(--font-nav);
-  font-size: 20px;
+  font-size: clamp(18px, 1.5vw + 12px, 24px);
   font-weight: 700;
   color: var(--text-primary);
-  margin-bottom: 6px;
+  margin-bottom: 0.50rem;
+  line-height: 1.2;
 }
 
 .card-desc {
-  font-size: 15px;
+  font-size: clamp(14px, 0.6vw + 12px, 16px);
+  line-height: 1.5;
   color: var(--text-muted);
+  margin-bottom: auto;
 }

@@ -2,7 +2,7 @@
 import * as docx from 'docx'
 import JSZip from 'jszip'
 import { ref } from 'vue'
-import * as udf from './scripts/udf'
+import * as udf from './scripts/parser'
 
 enum ToolEnum {
   toDocx,
@@ -130,18 +130,17 @@ function downloadBlob(blob: Blob, filename: string) {
       </p>
 
       <div class="input-group">
-        <label for="xmlFileInput" class="file-label">Dosya:</label> <br>
+        <label for="xmlFileInput" class="sub-label"><strong>Dosya:</strong></label> <br>
         <input id="xmlFileInput" type="file" accept=".udf" @change="processFile($event, ToolEnum.toDocx)">
       </div>
 
       <div v-if="docxFile" class="info-section">
-        <p class="file-label">
-          Seçilen Dosya: <br> <strong>{{ docxFile.name }}</strong>
-        </p>
+        <strong class="sub-label"> Seçilen Dosya: </strong>
+        <p> {{ docxFile.name }} </p>
       </div>
 
       <div v-if="docxConsole" class="info-section">
-        <h3>Konsol Çıktısı:</h3>
+        <strong class="sub-label"> Konsol Çıktısı: </strong>
         <pre class="console-box">{{ docxConsole }}</pre>
       </div>
     </div>
@@ -155,18 +154,17 @@ function downloadBlob(blob: Blob, filename: string) {
       </p>
 
       <div class="input-group">
-        <label for="versionFileInput" class="file-label">Dosya:</label> <br>
+        <label for="versionFileInput" class="sub-label"><strong>Dosya:</strong></label> <br>
         <input id="versionFileInput" type="file" accept=".udf" @change="processFile($event, ToolEnum.versionCheck)">
       </div>
 
       <div v-if="versionFile" class="info-section">
-        <p class="file-label">
-          Seçilen Dosya: <br> <strong>{{ versionFile.name }}</strong>
-        </p>
+        <strong class="sub-label"> Seçilen Dosya: </strong>
+        <p> {{ versionFile.name }} </p>
       </div>
 
       <div v-if="versionConsole" class="info-section">
-        <h3>Konsol Çıktısı:</h3>
+        <strong class="sub-label"> Konsol Çıktısı: </strong>
         <pre class="console-box">{{ versionConsole }}</pre>
       </div>
     </div>
@@ -185,13 +183,12 @@ function downloadBlob(blob: Blob, filename: string) {
   font-family: sans-serif;
 }
 
-.title,
-.file-label {
-  text-decoration: underline;
+.sub-label {
+
 }
 
 .input-group {
-  margin: 1rem 0;
+  margin-top: 1rem;
 }
 
 .info-section {

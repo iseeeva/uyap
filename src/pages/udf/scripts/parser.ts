@@ -13,12 +13,12 @@ export enum AlignmentEnum {
   left = 3,
 }
 
-export interface ITextPosition {
+export interface ITextPositionAttributes {
   startOffset: number
   length: number
 }
 
-export interface ITextStyle {
+export interface ITextStyleAttributes {
   family?: string
   size?: number
   foreground?: number
@@ -27,7 +27,7 @@ export interface ITextStyle {
   bold?: boolean
 }
 
-export interface IContentAttributes extends ITextPosition, ITextStyle {
+export interface IContentAttributes extends ITextPositionAttributes, ITextStyleAttributes {
   strikethrough: boolean
   height: number
   width: number
@@ -36,6 +36,7 @@ export interface IContentAttributes extends ITextPosition, ITextStyle {
 export interface IFieldAttributes extends IContentAttributes {
   fieldType: string
   fieldName: string
+  isList: boolean
 }
 
 export interface IImageAttributes extends IContentAttributes {
@@ -43,9 +44,9 @@ export interface IImageAttributes extends IContentAttributes {
   size?: number
 }
 
-export interface ITabAttributes extends ITextStyle, ITextPosition {}
+export interface ITabAttributes extends ITextPositionAttributes, ITextStyleAttributes {}
 
-export interface IHeaderFooterAttributes extends ITextStyle {}
+export interface IHeaderFooterAttributes extends ITextStyleAttributes {}
 
 export interface IParagraphAttributes {
   resolver: string
@@ -87,7 +88,7 @@ export interface IPageFormatAttributes {
   bottomMargin: number
 }
 
-export interface IGlobalStyle extends ITextStyle {
+export interface IStyleAttributes extends ITextStyleAttributes {
   name: string
   description: string
 }
@@ -113,16 +114,19 @@ export enum NodeEnum {
   Style = 'style',
 }
 
-export interface Node<TName extends NodeEnum, TAttributes, TChildren = never> {
+export interface Node<TName extends NodeEnum, TAttributes, TChildren = never, TContent extends string = never> {
   '#name': TName
   '$'?: TAttributes
   '$$'?: TChildren[]
+  '_'?: TContent
 }
 
 export type ParagraphElement = Content | Field | Image | Space | Tab
+export type DocumentElement = Table | Paragraph | PageBreak
+export type TopLevelElement = DocumentElement | Header | Footer
 
 export type Paragraph = Node<NodeEnum.Paragraph, IParagraphAttributes, ParagraphElement>
-export type Content = Node<NodeEnum.Content, IContentAttributes>
+export type Content = Node<NodeEnum.Content, IContentAttributes, never, string>
 export type Field = Node<NodeEnum.Field, IFieldAttributes>
 export type Image = Node<NodeEnum.Image, IImageAttributes>
 export type Space = Node<NodeEnum.Space, IContentAttributes>
@@ -134,20 +138,12 @@ export type Header = Node<NodeEnum.Header, IHeaderFooterAttributes, Paragraph>
 export type Footer = Node<NodeEnum.Footer, IHeaderFooterAttributes, Paragraph>
 export type PageFormat = Node<NodeEnum.PageFormat, IPageFormatAttributes>
 export type PageBreak = Node<NodeEnum.PageBreak, object, ParagraphElement>
-export type Style = Node<NodeEnum.Style, IGlobalStyle>
+export type Style = Node<NodeEnum.Style, IStyleAttributes>
 export type Styles = Node<NodeEnum.Styles, object, Style>
 export type Properties = Node<NodeEnum.Properties, object, PageFormat>
 export type Elements = Node<NodeEnum.Elements, object, DocumentElement>
 
-export type DocumentElement = Table | Paragraph | PageBreak
-export type TopLevelElement = DocumentElement | Header | Footer
-
-export interface IContentNode {
-  '#name': NodeEnum.Content
-  '_': string
-}
-
-export type TemplateElement = Properties | Elements | Styles | IContentNode
+export type TemplateElement = Properties | Elements | Styles | Content
 export type Template = Node<NodeEnum.Template, { format_id: string }, TemplateElement>
 
 export interface IUdfDocument {
@@ -188,7 +184,7 @@ function mergeStyles<T extends object>(...styles: Partial<T>[]): T {
   return result
 }
 
-function isContentNode(child: TemplateElement): child is IContentNode {
+function isContentNode(child: TemplateElement): child is Content {
   return child['#name'] === NodeEnum.Content
 }
 
@@ -196,7 +192,7 @@ function isContentNode(child: TemplateElement): child is IContentNode {
 
 // #region Style
 
-function runStyleFromContent(attrs: IContentAttributes): docx.IRunStylePropertiesOptions {
+function runStyleFromContent(attrs: IContentAttributes | ITextStyleAttributes): docx.IRunStylePropertiesOptions {
   return {
     bold: attrs.bold,
     italics: attrs.italic,
@@ -204,11 +200,12 @@ function runStyleFromContent(attrs: IContentAttributes): docx.IRunStylePropertie
     underline: attrs.underline ? { type: 'dash', color: '#000000' } : undefined,
     color: attrs.foreground ? convertColor(attrs.foreground) : undefined,
     font: attrs.family,
-    strike: attrs.strikethrough,
+    // @ts-expect-error: strikethrough undefined on some types
+    strike: attrs.strikethrough ?? false,
   }
 }
 
-function runStyleFromTextStyle(style?: ITextStyle): docx.IRunStylePropertiesOptions {
+function runStyleFromTextStyle(style?: ITextStyleAttributes): docx.IRunStylePropertiesOptions {
   return {
     bold: style?.bold,
     italics: style?.italic,
@@ -218,14 +215,14 @@ function runStyleFromTextStyle(style?: ITextStyle): docx.IRunStylePropertiesOpti
 }
 
 class StyleResolver {
-  private readonly registry: Record<string, IGlobalStyle>
+  private readonly registry: Record<string, IStyleAttributes>
 
-  constructor(styles: Record<string, IGlobalStyle>) {
+  constructor(styles: Record<string, IStyleAttributes>) {
     this.registry = styles
   }
 
   public static fromStylesNode(node: Styles): StyleResolver {
-    const registry: Record<string, IGlobalStyle> = {}
+    const registry: Record<string, IStyleAttributes> = {}
     for (const style of node.$$ ?? []) {
       const attrs = style?.$
       if (attrs?.name)
@@ -385,22 +382,75 @@ class ElementParser {
     paragraphStyle: docx.IRunStylePropertiesOptions,
   ): docx.TextRun | docx.ImageRun | undefined {
     switch (child['#name']) {
+      case NodeEnum.Field: // TODO: implement that type
       case NodeEnum.Content:
-        return this.parseContent(child, paragraphStyle)
+        return this.parseContent(child as unknown as Content, paragraphStyle)
 
-      case NodeEnum.Field: // TODO: implement that types
-      case NodeEnum.Space: // TODO: implement that types
-      case NodeEnum.Tab: // TODO: implement that types
-        break
+      case NodeEnum.Space: // TODO: implement that type
+      {
+        const attrs = child.$
+        if (!attrs)
+          return undefined
+
+        const count = attrs.length || 1
+        const runStyle = mergeStyles<docx.IRunStylePropertiesOptions>(
+          runStyleFromContent(attrs),
+          paragraphStyle,
+        )
+
+        return new docx.TextRun({
+          children: Array.from({ length: count }, () => ' '),
+          ...runStyle,
+        })
+      }
+
+      case NodeEnum.Tab: { // TODO: implement that type
+        const attrs = child.$
+        if (!attrs)
+          return undefined
+
+        const count = attrs.length || 1
+        const runStyle = mergeStyles<docx.IRunStylePropertiesOptions>(
+          runStyleFromContent(attrs),
+          paragraphStyle,
+        )
+
+        return new docx.TextRun({
+          children: Array.from({ length: count }, () => new docx.Tab()),
+          ...runStyle,
+        })
+      }
 
       case NodeEnum.Image: {
         const attrs = child.$
         if (!attrs)
           return undefined
 
+        type TImageType = 'png' | 'jpg' | 'gif' | 'bmp'
+        const imageData = Uint8Array.from(window.atob(attrs.imageData), c => c.charCodeAt(0))
+        const imageType: TImageType | undefined = (() => {
+          const magic: Record<TImageType, number[]> = { // note: every signature starts from 0
+            png: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+            jpg: [0xFF, 0xD8, 0xFF],
+            gif: [0x47, 0x49, 0x46, 0x38],
+            bmp: [0x42, 0x4D],
+          }
+
+          for (const [type, signature] of Object.entries(magic) as [TImageType, number[]][]) {
+            if (imageData.subarray(0, signature.length).every((v, i) => signature[i] === v)) {
+              return type
+            }
+          }
+
+          return undefined
+        })()
+
+        if (imageType == null)
+          return undefined
+
         return new docx.ImageRun({
-          data: Uint8Array.from(window.atob(attrs.imageData), c => c.charCodeAt(0)),
-          type: 'png',
+          data: imageData,
+          type: imageType,
           transformation: {
             height: attrs.size ?? attrs.height,
             width: attrs.size ?? attrs.width,
